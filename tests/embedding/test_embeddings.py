@@ -1,8 +1,10 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from slopo.config import Config
-from slopo.embedding.embeddings import embed_units
+from slopo.embedding.embeddings import EmbeddingError, embed_units
 from slopo.embedding.models import EmbeddedUnit, UnembeddedUnit
 
 _CONFIG = Config(
@@ -14,6 +16,7 @@ _CONFIG = Config(
     embedding_model="openai/text-embedding-3-small",
     embedding_dimensions=3,
     embedding_api_key="test-key",
+    embedding_api_base=None,
     embedding_batch_size=100,
     embedding_batch_chars=10000,
     similarity_threshold=0.9,
@@ -58,3 +61,13 @@ def test_multiple_units_preserve_order():
         EmbeddedUnit(body_hash="h2", vector=[0.0, 1.0, 0.0]),
         EmbeddedUnit(body_hash="h3", vector=[0.0, 0.0, 1.0]),
     ]
+
+
+def test_vector_size_mismatch_raises():
+    units = [UnembeddedUnit(body_hash="h1", body="def foo(): pass")]
+    with patch(
+        "litellm.embedding",
+        return_value=_mock_response([[1.0, 2.0]]),
+    ):
+        with pytest.raises(EmbeddingError):
+            embed_units(units, _CONFIG)

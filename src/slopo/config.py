@@ -25,10 +25,9 @@ embedding_model:
 # Output dimensions of the embedding model.
 embedding_dimensions:
 
-# Provider API key.
+# Provider API key. Optional, no need to set for local models.
 # Alternatively, set the SLOPO_EMBEDDING_API_KEY environment variable
 # (also picked up from a .env file in the current directory)
-# Choose what fits your workflow and security requirements.
 embedding_api_key:
 """
 
@@ -46,7 +45,8 @@ class Config:
     ignore_file: Path
     embedding_model: str
     embedding_dimensions: int
-    embedding_api_key: str
+    embedding_api_key: str | None
+    embedding_api_base: str | None
     embedding_batch_size: int
     embedding_batch_chars: int
     similarity_threshold: float
@@ -88,7 +88,8 @@ def parse_config(raw: Any, source: str) -> Config:
         ),
         embedding_model=_require_str(raw, "embedding_model", source),
         embedding_dimensions=_require_positive_int(raw, "embedding_dimensions", source),
-        embedding_api_key=_require_api_key(raw, source),
+        embedding_api_key=_optional_api_key(raw, source),
+        embedding_api_base=_optional_str(raw, "embedding_api_base", source),
         embedding_batch_size=_optional_positive_int(
             raw, "embedding_batch_size", source, default=100
         ),
@@ -132,15 +133,9 @@ def _check_missing_space_after_colon(text: str, source: str) -> None:
             )
 
 
-def _require_api_key(raw: dict[str, Any], source: str) -> str:
+def _optional_api_key(raw: dict[str, Any], source: str) -> str | None:
     from_env = os.environ.get("SLOPO_EMBEDDING_API_KEY")
-    key = from_env or _optional_str(raw, "embedding_api_key", source)
-    if not key:
-        raise ConfigError(
-            f"{source}: 'embedding_api_key' is required"
-            f" (or set the SLOPO_EMBEDDING_API_KEY environment variable)."
-        )
-    return key
+    return from_env or _optional_str(raw, "embedding_api_key", source)
 
 
 def _require_str(raw: dict[str, Any], key: str, source: str) -> str:

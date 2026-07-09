@@ -2,7 +2,7 @@
 
 # Slopo
 
-A lightweight CLI tool for detecting non-exact code duplication using embedding models.
+A CLI tool for detecting non-exact code duplication using embedding models.
 
 It focuses on the similar code that is hardest to detect and most harmful: snippets written similarly, sitting far apart in the codebase, often spread across different modules or separated within a large file. Exact copy-paste is easy to spot by other tools, and duplicates that are close together are easy to spot by humans or AI.
 
@@ -46,11 +46,28 @@ Run `slopo init` to create a config file template containing further instruction
 
 ### Embedding model
 
-Embeddings are calculated using an external provider. For best results, consider models dedicated to code, e.g. [Voyage AI](https://docs.voyageai.com/docs/embeddings) (it works fine with low dimensions like `512`).
+#### Option 1: External provider
+
+Embeddings can be calculated using an external provider. For best results, consider models dedicated to code, e.g. [Voyage AI](https://docs.voyageai.com/docs/embeddings) (it works fine with low dimensions like `512`).
 
 You can use any model provider compatible with LiteLLM, [see details here](https://docs.litellm.ai/docs/embedding/supported_embedding).
 
 The provider API key can be set as an environment variable for better security.
+
+#### Option 2: Local model
+
+Any OpenAI-compatible server with custom `api_base` is supported, see LiteLLM docs.
+
+[Ollama](https://ollama.com) is also supported, and you can use `jina-embeddings-v2-base-code` model without AI-specialized hardware.
+
+1. Install Ollama
+2. Pull model [from here](https://ollama.com/unclemusclez/jina-embeddings-v2-base-code)
+3. Configure Slopo
+    ```yaml
+    embedding_model: ollama/unclemusclez/jina-embeddings-v2-base-code
+    embedding_dimensions: 768
+    embedding_api_base: http://localhost:11434
+    ```
 
 ### Analysis
 
@@ -94,8 +111,9 @@ Most configuration is done with a configuration file with two exceptions:
 - `report_dir`: Output directory for analysis report.
 - `ignore_file`: Text file with ignored clusters.
 - `embedding_model`: Embedding model name in LiteLLM format.
-- `embedding_dimensions`: Embedding dimensions compatible with the used model.
-- `embedding_api_key`: API key for embedding provider. Optional if configured with an environment variable.
+- `embedding_dimensions`: Embedding dimensions compatible with the used model. This value is also used to verify received embeddings dimensions.
+- `embedding_api_key`: API key for embedding provider, alternatively configured with an environment variable. Optional, no need to set for local models.
+- `embedding_api_base`: HTTP base URL for embedding service.
 - `embedding_batch_size` and `embedding_batch_chars`: Requests to the embedding API are batched for performance. Defaults are fine for most cases.
 - `similarity_threshold`: Controls minimal cosine similarity between embeddings.
 - `rerank_threshold`: Controls minimal similarity after applying a boost reflecting distance in the codebase.

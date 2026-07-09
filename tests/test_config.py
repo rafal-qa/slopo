@@ -34,6 +34,7 @@ def test_returns_config_with_defaults_when_only_required_fields_present():
     assert cfg.embedding_model == "voyage/voyage-code-3"
     assert cfg.embedding_dimensions == 1024
     assert cfg.embedding_api_key == "test-key-12345"
+    assert cfg.embedding_api_base is None
     assert cfg.embedding_batch_size == 100
     assert cfg.embedding_batch_chars == 100_000
     assert cfg.similarity_threshold == 0.92
@@ -178,17 +179,42 @@ def test_path_fields_parsed_from_config():
 # --- API key ---
 
 
+def test_api_key_read_from_config_file():
+    cfg = parse_config(_minimal_raw(embedding_api_key="from-file"), source="<test>")
+    assert cfg.embedding_api_key == "from-file"
+
+
 def test_env_var_overrides_config_file_api_key(monkeypatch):
     monkeypatch.setenv("SLOPO_EMBEDDING_API_KEY", "from-env")
     cfg = parse_config(_minimal_raw(embedding_api_key="from-file"), source="<test>")
     assert cfg.embedding_api_key == "from-env"
 
 
-def test_missing_api_key_in_both_sources_rejected():
+def test_missing_api_key_in_both_sources_defaults_to_none():
     raw = _minimal_raw()
     del raw["embedding_api_key"]
-    with pytest.raises(ConfigError, match="'embedding_api_key' is required"):
-        parse_config(raw, source="<test>")
+    cfg = parse_config(raw, source="<test>")
+    assert cfg.embedding_api_key is None
+
+
+# --- API base ---
+
+
+def test_api_base_read_from_config_file():
+    cfg = parse_config(
+        _minimal_raw(embedding_api_base="http://localhost:1234"), source="<test>"
+    )
+    assert cfg.embedding_api_base == "http://localhost:1234"
+
+
+def test_missing_api_base_defaults_to_none():
+    cfg = parse_config(_minimal_raw(), source="<test>")
+    assert cfg.embedding_api_base is None
+
+
+def test_api_base_wrong_type_rejected():
+    with pytest.raises(ConfigError, match="'embedding_api_base' must be a string"):
+        parse_config(_minimal_raw(embedding_api_base=123), source="<test>")
 
 
 # --- mask_api_key ---

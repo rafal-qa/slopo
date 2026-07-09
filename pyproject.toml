@@ -1,6 +1,6 @@
 [project]
 name = "slopo"
-version = "0.3.0"
+version = "0.4.0"
 description = "Embedding-based code duplication detector"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -8,8 +8,8 @@ authors = [{ name = "Rafal Kochanowski" }]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "litellm~=1.90.2",
-    "numpy~=2.5.0",
+    "litellm~=1.91.1",
+    "numpy~=2.5.1",
     "pathspec~=1.1.1",
     "python-dotenv~=1.2.2",
     "pyyaml~=6.0.3",

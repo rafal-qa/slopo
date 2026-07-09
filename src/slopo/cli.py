@@ -24,6 +24,7 @@ from slopo.db import (
 )
 from slopo.indexing.command import run_index
 from slopo.embedding.command import run_embed
+from slopo.embedding.embeddings import EmbeddingError
 from slopo.embedding.db import count_unembedded_units
 from slopo.analysis.command import run_analyze
 
@@ -83,7 +84,9 @@ def show_config(ctx: typer.Context) -> None:
     cfg = _load_config_or_exit(ctx)
     for f in fields(cfg):
         value = getattr(cfg, f.name)
-        if f.name == "embedding_api_key":
+        if value is None:
+            value = "<unset>"
+        elif f.name == "embedding_api_key":
             value = mask_api_key(value)
         typer.echo(f"{f.name}: {value}")
 
@@ -115,7 +118,11 @@ def embed(ctx: typer.Context) -> None:
     """Compute embeddings for indexed code units."""
     cfg = _load_config_or_exit(ctx)
     conn = _open_existing_db_or_exit(cfg)
-    run_embed(conn, cfg, typer.echo)
+    try:
+        run_embed(conn, cfg, typer.echo)
+    except EmbeddingError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
