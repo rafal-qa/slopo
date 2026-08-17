@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +17,7 @@ _CONFIG = Config(
     embedding_model="openai/text-embedding-3-small",
     embedding_dimensions=3,
     embedding_api_key="test-key",
-    embedding_api_base=None,
+    embedding_params={},
     embedding_batch_size=100,
     embedding_batch_chars=10000,
     similarity_threshold=0.9,
@@ -61,6 +62,23 @@ def test_multiple_units_preserve_order():
         EmbeddedUnit(body_hash="h2", vector=[0.0, 1.0, 0.0]),
         EmbeddedUnit(body_hash="h3", vector=[0.0, 0.0, 1.0]),
     ]
+
+
+def test_embedding_params_forwarded_to_litellm():
+    units = [UnembeddedUnit(body_hash="h1", body="def foo(): pass")]
+    config = replace(
+        _CONFIG,
+        embedding_params={"input_type": "search_document", "truncation": False},
+    )
+    with patch(
+        "litellm.embedding",
+        return_value=_mock_response([[1.0, 2.0, 3.0]]),
+    ) as mock_embedding:
+        embed_units(units, config)
+
+    kwargs = mock_embedding.call_args.kwargs
+    assert kwargs["input_type"] == "search_document"
+    assert kwargs["truncation"] is False
 
 
 def test_vector_size_mismatch_raises():

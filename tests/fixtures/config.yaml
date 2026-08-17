@@ -1,0 +1,9 @@
+source_dir: /tmp/my-project
+embedding_model: voyage/voyage-4-large
+embedding_dimensions: 1024
+embedding_api_key: test-key-12345
+embedding_params:
+  encoding_format: float
+  output_dimension: 512
+  temperature: 0.5
+  truncation: false

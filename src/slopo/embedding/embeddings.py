@@ -11,12 +11,12 @@ def embed_units(batch: list[UnembeddedUnit], config: Config) -> list[EmbeddedUni
 
     litellm.suppress_debug_info = True
     try:
-        response = litellm.embedding(
+        response = litellm.embedding(  # type: ignore[call-overload]
             model=config.embedding_model,
             input=[u.body for u in batch],
             dimensions=config.embedding_dimensions,
             api_key=config.embedding_api_key,
-            api_base=config.embedding_api_base,
+            **config.embedding_params,
         )
     except tuple(litellm.LITELLM_EXCEPTION_TYPES) as e:  # type: ignore[misc]
         raise EmbeddingError(str(e)) from e

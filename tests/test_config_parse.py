@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from slopo.config import ConfigError, load_config, mask_api_key, parse_config
+from slopo.config import ConfigError, mask_api_key, parse_config
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def test_returns_config_with_defaults_when_only_required_fields_present():
     assert cfg.embedding_model == "voyage/voyage-code-3"
     assert cfg.embedding_dimensions == 1024
     assert cfg.embedding_api_key == "test-key-12345"
-    assert cfg.embedding_api_base is None
+    assert cfg.embedding_params == {}
     assert cfg.embedding_batch_size == 100
     assert cfg.embedding_batch_chars == 100_000
     assert cfg.similarity_threshold == 0.92
@@ -98,6 +98,11 @@ def test_wrong_type_optional_float_rejected():
         ConfigError, match="'similarity_threshold' must be a number, got '0.9'"
     ):
         parse_config(_minimal_raw(similarity_threshold="0.9"), source="<test>")
+
+
+def test_unrecognized_key_rejected():
+    with pytest.raises(ConfigError, match="unrecognized config key 'example_config'"):
+        parse_config(_minimal_raw(example_config="invalid"), source="<test>")
 
 
 # --- source_dir ---
@@ -197,24 +202,64 @@ def test_missing_api_key_in_both_sources_defaults_to_none():
     assert cfg.embedding_api_key is None
 
 
-# --- API base ---
+# --- embedding_params ---
 
 
-def test_api_base_read_from_config_file():
-    cfg = parse_config(
-        _minimal_raw(embedding_api_base="http://localhost:1234"), source="<test>"
-    )
-    assert cfg.embedding_api_base == "http://localhost:1234"
-
-
-def test_missing_api_base_defaults_to_none():
+def test_embedding_params_defaults_to_empty_dict_when_absent():
     cfg = parse_config(_minimal_raw(), source="<test>")
-    assert cfg.embedding_api_base is None
+    assert cfg.embedding_params == {}
 
 
-def test_api_base_wrong_type_rejected():
-    with pytest.raises(ConfigError, match="'embedding_api_base' must be a string"):
-        parse_config(_minimal_raw(embedding_api_base=123), source="<test>")
+def test_embedding_params_passes_scalar_values_through_with_types():
+    cfg = parse_config(
+        _minimal_raw(
+            embedding_params={
+                "input_type": "search_document",
+                "output_dimension": 512,
+                "temperature": 0.5,
+                "truncation": False,
+            }
+        ),
+        source="<test>",
+    )
+    assert cfg.embedding_params == {
+        "input_type": "search_document",
+        "output_dimension": 512,
+        "temperature": 0.5,
+        "truncation": False,
+    }
+    assert cfg.embedding_params["truncation"] is False
+    assert isinstance(cfg.embedding_params["output_dimension"], int)
+
+
+def test_embedding_params_non_mapping_rejected():
+    with pytest.raises(ConfigError, match="'embedding_params' must be a mapping"):
+        parse_config(_minimal_raw(embedding_params=["input_type"]), source="<test>")
+
+
+def test_embedding_params_non_string_key_rejected():
+    with pytest.raises(
+        ConfigError, match="'embedding_params' keys must be non-empty strings"
+    ):
+        parse_config(_minimal_raw(embedding_params={1: "value"}), source="<test>")
+
+
+def test_embedding_params_reserved_key_rejected():
+    with pytest.raises(ConfigError, match="'embedding_params' cannot set 'dimensions'"):
+        parse_config(
+            _minimal_raw(embedding_params={"dimensions": 256}), source="<test>"
+        )
+
+
+def test_embedding_params_non_scalar_value_rejected():
+    with pytest.raises(
+        ConfigError,
+        match="'embedding_params.input_type' must be a string, number, or boolean",
+    ):
+        parse_config(
+            _minimal_raw(embedding_params={"input_type": ["a", "b"]}),
+            source="<test>",
+        )
 
 
 # --- mask_api_key ---
@@ -227,39 +272,3 @@ def test_mask_short_key_fully_hidden():
 def test_mask_long_key_keeps_first_and_last_five_chars():
     key = "voyage-1234567890abcdef"
     assert mask_api_key(key) == "voyag...bcdef"
-
-
-# --- load_config: file I/O wrapper ---
-
-
-def test_load_config_reads_valid_file(tmp_path):
-    path = tmp_path / "slopo.conf.yaml"
-    path.write_text(
-        "source_dir: /tmp/my-project\n"
-        "embedding_model: voyage/voyage-code-3\n"
-        "embedding_dimensions: 1024\n"
-        "embedding_api_key: test-key-12345\n"
-    )
-    cfg = load_config(path)
-    assert cfg.embedding_model == "voyage/voyage-code-3"
-    assert cfg.embedding_dimensions == 1024
-    assert cfg.embedding_api_key == "test-key-12345"
-
-
-def test_load_config_handles_empty_file(tmp_path):
-    path = tmp_path / "slopo.conf.yaml"
-    path.write_text("")
-    with pytest.raises(ConfigError, match="'source_dir' is required"):
-        load_config(path)
-
-
-def test_load_config_detects_missing_space_after_colon(tmp_path):
-    path = tmp_path / "slopo.conf.yaml"
-    path.write_text(
-        "embedding_model: m\nembedding_dimensions:1024\nembedding_api_key: k\n"
-    )
-    with pytest.raises(ConfigError) as exc:
-        load_config(path)
-    msg = str(exc.value)
-    assert ":2:" in msg
-    assert "missing space after ':'" in msg

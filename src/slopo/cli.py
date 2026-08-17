@@ -84,7 +84,15 @@ def show_config(ctx: typer.Context) -> None:
     cfg = _load_config_or_exit(ctx)
     for f in fields(cfg):
         value = getattr(cfg, f.name)
-        if value is None:
+        if f.name == "embedding_params":
+            if not value:
+                typer.echo(f"{f.name}: <unset>")
+            else:
+                typer.echo(f"{f.name}:")
+                for key, item in value.items():
+                    typer.echo(f"  {key}: {item}")
+            continue
+        if value is None or value == []:
             value = "<unset>"
         elif f.name == "embedding_api_key":
             value = mask_api_key(value)
