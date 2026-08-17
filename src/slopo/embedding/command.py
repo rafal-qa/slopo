@@ -1,4 +1,5 @@
 import sqlite3
+import time
 
 from slopo.config import Config
 from slopo.embedding.db import (
@@ -34,4 +35,6 @@ def run_embed(
             save_embeddings(conn, batch_embeddings)
         embedded += len(batch)
         log(f"Embedded {embedded}/{total} code units...")
+        if cfg.embedding_request_delay > 0:
+            time.sleep(cfg.embedding_request_delay)
     log("Done")

@@ -37,6 +37,7 @@ def test_returns_config_with_defaults_when_only_required_fields_present():
     assert cfg.embedding_params == {}
     assert cfg.embedding_batch_size == 100
     assert cfg.embedding_batch_chars == 100_000
+    assert cfg.embedding_request_delay == 0
     assert cfg.similarity_threshold == 0.92
     assert cfg.rerank_threshold == 0.94
     assert cfg.body_node_count_threshold == 10
@@ -103,6 +104,33 @@ def test_wrong_type_optional_float_rejected():
 def test_unrecognized_key_rejected():
     with pytest.raises(ConfigError, match="unrecognized config key 'example_config'"):
         parse_config(_minimal_raw(example_config="invalid"), source="<test>")
+
+
+# --- embedding_request_delay ---
+
+
+def test_embedding_request_delay_overrides_default():
+    cfg = parse_config(_minimal_raw(embedding_request_delay=5), source="<test>")
+    assert cfg.embedding_request_delay == 5
+
+
+def test_embedding_request_delay_accepts_zero():
+    cfg = parse_config(_minimal_raw(embedding_request_delay=0), source="<test>")
+    assert cfg.embedding_request_delay == 0
+
+
+def test_embedding_request_delay_negative_rejected():
+    with pytest.raises(
+        ConfigError, match="'embedding_request_delay' must not be negative, got -1"
+    ):
+        parse_config(_minimal_raw(embedding_request_delay=-1), source="<test>")
+
+
+def test_embedding_request_delay_fractional_rejected():
+    with pytest.raises(
+        ConfigError, match="'embedding_request_delay' must be an integer, got 1.5"
+    ):
+        parse_config(_minimal_raw(embedding_request_delay=1.5), source="<test>")
 
 
 # --- source_dir ---

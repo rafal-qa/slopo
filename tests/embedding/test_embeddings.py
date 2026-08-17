@@ -20,6 +20,7 @@ _CONFIG = Config(
     embedding_params={},
     embedding_batch_size=100,
     embedding_batch_chars=10000,
+    embedding_request_delay=0,
     similarity_threshold=0.9,
     rerank_threshold=0.93,
     body_node_count_threshold=10,

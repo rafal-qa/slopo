@@ -48,6 +48,7 @@ class Config:
     embedding_params: dict[str, str | int | float | bool]
     embedding_batch_size: int
     embedding_batch_chars: int
+    embedding_request_delay: int
     similarity_threshold: float
     rerank_threshold: float
     body_node_count_threshold: int
@@ -83,6 +84,7 @@ _KNOWN_CONFIG_KEYS = {
     "embedding_params",
     "embedding_batch_size",
     "embedding_batch_chars",
+    "embedding_request_delay",
     "similarity_threshold",
     "rerank_threshold",
     "body_node_count_threshold",
@@ -116,6 +118,9 @@ def parse_config(raw: Any, source: str) -> Config:
         ),
         embedding_batch_chars=_optional_positive_int(
             raw, "embedding_batch_chars", source, default=100_000
+        ),
+        embedding_request_delay=_optional_non_negative_int(
+            raw, "embedding_request_delay", source, default=0
         ),
         similarity_threshold=_optional_positive_float(
             raw, "similarity_threshold", source, default=0.92
@@ -253,6 +258,19 @@ def _optional_positive_float(
     if value is None:
         return default
     return _ensure_positive_float(value, key, source)
+
+
+def _optional_non_negative_int(
+    raw: dict[str, Any], key: str, source: str, default: int
+) -> int:
+    value = raw.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{source}: '{key}' must be an integer, got {value!r}")
+    if value < 0:
+        raise ConfigError(f"{source}: '{key}' must not be negative, got {value}")
+    return value
 
 
 def _ensure_positive_int(value: Any, key: str, source: str) -> int:
