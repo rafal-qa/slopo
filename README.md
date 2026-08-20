@@ -33,7 +33,7 @@ Jina AI offers API keys with free tokens for non-commercial use, without registr
 
 ### Local model
 
-One tested solution is to use [Ollama]([Ollama](https://ollama.com)) with `jina-embeddings-v2-base-code`. This is a small model that also runs on a CPU, but it may be (significantly) slower than the API, depending on the hardware you use. Pull the model [from here](https://ollama.com/unclemusclez/jina-embeddings-v2-base-code).
+One tested solution is to use [Ollama](https://ollama.com) with `jina-embeddings-v2-base-code`. This is a small model that also runs on a CPU, but it may be (significantly) slower than the API, depending on the hardware you use. Pull the model [from here](https://ollama.com/unclemusclez/jina-embeddings-v2-base-code).
 
 ### Other models
 
