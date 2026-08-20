@@ -6,7 +6,9 @@ A CLI tool for detecting non-exact code duplication using embedding models.
 
 It focuses on the similar code that is hardest to detect and most harmful: snippets written similarly, sitting far apart in the codebase, often spread across different modules or separated within a large file. Exact copy-paste is easy to spot by other tools, and duplicates that are close together are easy to spot by humans or AI.
 
-For more high-level description of the problem and example LLM prompts see [slopo.dev](https://slopo.dev/).
+For high-level description of the problem and example LLM prompts, see [slopo.dev](https://slopo.dev/).
+
+For details, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). The author is also the developer of this tool, so both parts are compatible. The sample configuration in this documentation is the one that gives the best results based on this research.
 
 ### Supported languages
 
@@ -14,17 +16,32 @@ Python, TypeScript, JavaScript, Java, Kotlin, C#, Go, Rust, PHP, Elixir
 
 ## How it works
 
-It takes a different approach than typical duplication detection. For every code unit, it calculates an embedding, then looks for pairs whose embeddings are close. Similar code is not necessarily a duplicate, so each pair is a potential duplicate to confirm. Code doing the same thing but implemented in a completely different way produces distant embeddings and won't be detected.
+It takes a different approach than typical duplication detection. For every code unit, it calculates an embedding, then looks for pairs whose embeddings are close. Similar code is not necessarily a duplicate, so each pair is a potential duplicate to confirm.
 
 The result is clusters of similar code units, ranked by similarity and by distance in the codebase. These clusters are meant as input for your AI coding agent, which can check whether a cluster is a real duplicate. Reviewed clusters can be marked as ignored or passed on for refactoring.
 
-### Example report
+[Example report](doc/example-report) generated from Slopo code (`src` directory, git tag `v0.2.0`).
 
-See [doc/example-report](doc/example-report) generated from Slopo code, `src` directory, git tag `v0.2.0`.
+## Accessing embedding model
 
-This example confirmed that code parsers for each language have a lot of duplication, some are exact-copy, some are similar variants. It needs to be refactored.
+According to the benchmark, two providers are recommended:
+
+1. [Jina AI](https://jina.ai/) - code-focused models available via API and for local use
+2. [Voyage AI](https://www.voyageai.com/) - general-purpose model only, not code-focused ones which are not suitable here
+
+Jina AI offers API keys with free tokens for non-commercial use, without registration. Paid options are available for commercial use. Simply open the main page, and the token will be generated. You should see "_You have 10,000,000 tokens left in the API key below._" However, free tokens are not always granted - this is probably because of abuse prevention mechanisms based on IP address or other measures (it's a guess, not official information).
+
+### Local model
+
+One tested solution is to use [Ollama]([Ollama](https://ollama.com)) with `jina-embeddings-v2-base-code`. This is a small model that also runs on a CPU, but it may be (significantly) slower than the API, depending on the hardware you use. Pull the model [from here](https://ollama.com/unclemusclez/jina-embeddings-v2-base-code).
+
+### Other models
+
+Any model provider [supported by LiteLLM](https://docs.litellm.ai/docs/providers) can be configured. Additionally, any OpenAI-compatible server is supported.
 
 ## Quick start
+
+Once you figure out the model, the rest is quick.
 
 ### Installation
 
@@ -32,41 +49,44 @@ This example confirmed that code parsers for each language have a lot of duplica
 uv tool install slopo
 ```
 
-or upgrade to the latest version
+Update to the latest version (there are no automatic updates)
 
 ```bash
 uv tool upgrade slopo
 ```
 
-This command uses `uv` ([installing uv](https://docs.astral.sh/uv/getting-started/installation/)), a Python package manager, to install/upgrade Slopo from [PyPI](https://pypi.org/project/slopo/) in an isolated virtual environment. No need to get Python separately.
+This command uses `uv` ([installing uv](https://docs.astral.sh/uv/getting-started/installation/)), a Python package manager, to install Slopo from [PyPI](https://pypi.org/project/slopo/) in an isolated virtual environment. No need to get Python separately.
 
 ### Setup
 
 Run `slopo init` to create a config file template containing further instructions. Only the directory with code for analysis and embedding model configuration is required.
 
-### Embedding model
+### Model configuration
 
-#### Option 1: External provider
+#### Jina AI
 
-Embeddings can be calculated using an external provider. For best results, consider models dedicated to code, e.g. [Voyage AI](https://docs.voyageai.com/docs/embeddings) (it works fine with low dimensions like `512`).
+```yaml
+embedding_model: jina_ai/jina-code-embeddings-0.5b
+embedding_dimensions: 256
+embedding_params:
+  task: code2code.query
+```
 
-You can use any model provider [compatible with LiteLLM](https://docs.litellm.ai/docs/providers).
+If you are embedding a large project with the free API key and hitting rate limits, add the `embedding_request_delay: 6` option to slow down.
 
-The provider API key can be set as an environment variable for better security.
+#### Voyage AI
 
-#### Option 2: Local model
+```yaml
+embedding_model: voyage/voyage-4-large
+embedding_dimensions: 256
+```
 
-Any OpenAI-compatible server is supported, see LiteLLM docs.
+#### Local model
 
-[Ollama](https://ollama.com) is also supported, and you can use `jina-embeddings-v2-base-code` model without AI-specialized hardware.
-
-1. Install Ollama
-2. Pull model [from here](https://ollama.com/unclemusclez/jina-embeddings-v2-base-code)
-3. Configure Slopo
-  ```yaml
-  embedding_model: ollama/unclemusclez/jina-embeddings-v2-base-code
-  embedding_dimensions: 768
-  ```
+```yaml
+embedding_model: ollama/unclemusclez/jina-embeddings-v2-base-code
+embedding_dimensions: 768
+```
 
 ### Analysis
 
@@ -112,8 +132,14 @@ Most configuration is done with a configuration file with two exceptions:
 - `embedding_model`: Embedding model name in LiteLLM format.
 - `embedding_dimensions`: Embedding dimensions compatible with the used model. This value is also used to verify received embeddings dimensions.
 - `embedding_api_key`: API key for embedding provider, alternatively configured with an environment variable. Optional, no need to set for local models.
+- `embedding_params`: Additional properties passed to the LiteLLM and embedding API. Anything supported by the API provider is valid. Example:
+```yaml
+embedding_params:
+  api_base: http://example.com:123
+  task: code2code.query
+```
 - `embedding_batch_size` and `embedding_batch_chars`: Requests to the embedding API are batched for performance. Defaults are fine for most cases.
-- `embedding_request_delay`: Delay in seconds after every batched request, by default no delay. Increase if you reach embedding API rate limits.
+- `embedding_request_delay`: Delay in seconds after every batched request, by default no delay. Increase if you reach rate limits.
 - `similarity_threshold`: Controls minimal cosine similarity between embeddings.
 - `rerank_threshold`: Controls minimal similarity after applying a boost reflecting distance in the codebase.
 - `body_node_count_threshold`: Number of AST nodes inside the body (excluding signature and annotations). This value reflects the minimum code complexity of the included code unit, more precise than text length. Increase if you notice unwanted, too-small code units in the report.

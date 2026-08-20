@@ -1,6 +1,6 @@
 [project]
 name = "slopo"
-version = "0.4.0"
+version = "0.5.0"
 description = "Embedding-based code duplication detector"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
