@@ -1,20 +1,19 @@
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
 from slopo.db import chunked
 from slopo.indexing.parsing.base import CodeUnit
 
 
 @dataclass
-class UpsertResult:
-    file_id: int
-    modified: bool
+class IndexedFile:
+    id: int
+    mtime: float
 
 
-def list_indexed_paths(conn: sqlite3.Connection) -> dict[str, int]:
-    rows = conn.execute("SELECT path, id FROM files").fetchall()
-    return {row[0]: row[1] for row in rows}
+def list_indexed_files(conn: sqlite3.Connection) -> dict[str, IndexedFile]:
+    rows = conn.execute("SELECT path, id, mtime FROM files").fetchall()
+    return {row[0]: IndexedFile(id=row[1], mtime=row[2]) for row in rows}
 
 
 def delete_files(conn: sqlite3.Connection, file_ids: list[int]) -> None:
@@ -26,25 +25,13 @@ def delete_files(conn: sqlite3.Connection, file_ids: list[int]) -> None:
         conn.execute(f"DELETE FROM files WHERE id IN ({id_placeholders})", chunk)
 
 
-def upsert_file(conn: sqlite3.Connection, path: Path, mtime: float) -> UpsertResult:
-    posix_path = path.as_posix()
-    row = conn.execute(
-        "SELECT id, mtime FROM files WHERE path = ?", (posix_path,)
-    ).fetchone()
+def insert_file(conn: sqlite3.Connection, path: str, mtime: float) -> int:
+    conn.execute("INSERT INTO files (path, mtime) VALUES (?, ?)", (path, mtime))
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    if row is not None and row[1] == mtime:
-        return UpsertResult(file_id=row[0], modified=False)
 
-    if row is None:
-        conn.execute(
-            "INSERT INTO files (path, mtime) VALUES (?, ?)", (posix_path, mtime)
-        )
-        file_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    else:
-        conn.execute("UPDATE files SET mtime = ? WHERE id = ?", (mtime, row[0]))
-        file_id = row[0]
-
-    return UpsertResult(file_id=file_id, modified=True)
+def update_file_mtime(conn: sqlite3.Connection, file_id: int, mtime: float) -> None:
+    conn.execute("UPDATE files SET mtime = ? WHERE id = ?", (mtime, file_id))
 
 
 def delete_file_units(conn: sqlite3.Connection, file_id: int) -> None:

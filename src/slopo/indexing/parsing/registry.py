@@ -36,5 +36,5 @@ def get_parser(path: Path) -> CodeParser:
     return parser
 
 
-def supported_extensions() -> list[str]:
-    return list(_REGISTRY)
+def supported_extensions() -> set[str]:
+    return set(_REGISTRY)

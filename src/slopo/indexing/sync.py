@@ -5,12 +5,14 @@ from pathlib import Path
 from slopo.indexing.db import (
     delete_file_units,
     delete_files,
+    insert_file,
     insert_file_units,
-    list_indexed_paths,
+    list_indexed_files,
     prune_orphan_embeddings,
-    upsert_file,
+    update_file_mtime,
+    IndexedFile,
 )
-from slopo.indexing.scanner import scan_directory
+from slopo.indexing.scanner import filter_units, parse_file, scan_directory
 
 
 @dataclass
@@ -31,20 +33,37 @@ def sync_index(
     skipped_files = 0
     indexed_units = 0
 
-    previously_indexed = list_indexed_paths(conn)
-    for scanned_file in scan_directory(directory, body_node_count_threshold, exclude):
-        mtime = (directory / scanned_file.path).stat().st_mtime
-        result = upsert_file(conn, scanned_file.path, mtime)
-        previously_indexed.pop(scanned_file.path.as_posix(), None)
-        if not result.modified:
+    indexed: dict[str, IndexedFile] = list_indexed_files(conn)
+    seen_paths: set[str] = set()
+
+    for path_str in scan_directory(directory, exclude):
+        seen_paths.add(path_str)
+        full_path: Path = directory / path_str
+        mtime = full_path.stat().st_mtime
+        existing = indexed.get(path_str)
+
+        if existing is not None and existing.mtime == mtime:
             skipped_files += 1
             continue
-        delete_file_units(conn, result.file_id)
-        insert_file_units(conn, result.file_id, scanned_file.units)
-        indexed_files += 1
-        indexed_units += len(scanned_file.units)
 
-    removed_ids = list(previously_indexed.values())
+        units = parse_file(full_path)
+        units = filter_units(units, body_node_count_threshold)
+
+        if existing is None:
+            file_id = insert_file(conn, path_str, mtime)
+        else:
+            update_file_mtime(conn, existing.id, mtime)
+            file_id = existing.id
+            delete_file_units(conn, file_id)
+
+        insert_file_units(conn, file_id, units)
+        indexed_files += 1
+        indexed_units += len(units)
+
+    removed_ids = []
+    for path, indexed_file in indexed.items():
+        if path not in seen_paths:
+            removed_ids.append(indexed_file.id)
     delete_files(conn, removed_ids)
 
     prune_orphan_embeddings(conn)
