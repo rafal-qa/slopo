@@ -2,13 +2,14 @@
 
 # Slopo
 
-A CLI tool for detecting non-exact code duplication using embedding models.
+Embedding models are typically used for finding text written differently but having similar meaning. Some models are able to do the same with source code. Slopo is a CLI tool that uses this technology for finding hardest-to-detect code duplicates.
 
-It focuses on the similar code that is hardest to detect and most harmful: snippets written similarly, sitting far apart in the codebase, often spread across different modules or separated within a large file. Exact copy-paste is easy to spot by other tools, and duplicates that are close together are easy to spot by humans or AI.
+To learn what embeddings can detect, where they are weak, and which models work best, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). It was written by the author of this tool, so its conclusions apply directly here. The sample configuration in this documentation is the one that performed best in the benchmark.
 
-For high-level description of the problem and example LLM prompts, see [slopo.dev](https://slopo.dev/).
+Slopo helps with:
 
-For details, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). The author is also the developer of this tool, so both parts are compatible. The sample configuration in this documentation is the one that gives the best results based on this research.
+- Analysis of the whole codebase to find similar code. For refactoring and maintenance.
+- Review of recent changes to find similar code between modified or new part and the rest of codebase. For reviewing AI-generated code before committing because AI may re-implement the same solution that already exists somewhere.
 
 ### Supported languages
 
@@ -16,9 +17,9 @@ Python, TypeScript, JavaScript, Java, Kotlin, C#, Go, Rust, PHP, Elixir
 
 ## How it works
 
-It takes a different approach than typical duplication detection. For every code unit, it calculates an embedding, then looks for pairs whose embeddings are close. Similar code is not necessarily a duplicate, so each pair is a potential duplicate to confirm.
+In addition to detecting non-exact code duplication, it focuses on code sitting far apart in the codebase, often spread across different modules or separated within a large file. Exact copy-paste is easy for other tools to spot, and duplicates that are close together are easy for humans or AI to spot.
 
-The result is clusters of similar code units, ranked by similarity and by distance in the codebase. These clusters are meant as input for your AI coding agent, which can check whether a cluster is a real duplicate. Reviewed clusters can be marked as ignored or passed on for refactoring.
+The result is clusters of similar code, ranked by similarity and by distance in the codebase. These are meant as input for your AI coding agent, which can check whether a cluster is a real duplicate. Reviewed ones can be marked as ignored or passed on for refactoring.
 
 [Example report](doc/example-report) generated from Slopo code (`src` directory, git tag `v0.2.0`).
 
@@ -27,7 +28,7 @@ The result is clusters of similar code units, ranked by similarity and by distan
 According to the benchmark, two providers are recommended:
 
 1. [Jina AI](https://jina.ai/) - code-focused models available via API and for local use
-2. [Voyage AI](https://www.voyageai.com/) - general-purpose model only, not code-focused ones which are not suitable here
+2. [Voyage AI](https://www.voyageai.com/) - only their general-purpose model, their code-focused models are not suitable here
 
 Jina AI offers API keys with free tokens for non-commercial use, without registration. Paid options are available for commercial use. Simply open the main page, and the token will be generated. You should see "_You have 10,000,000 tokens left in the API key below._" However, free tokens are not always granted - this is probably because of abuse prevention mechanisms based on IP address or other measures (it's a guess, not official information).
 
@@ -88,29 +89,38 @@ embedding_model: ollama/unclemusclez/jina-embeddings-v2-base-code
 embedding_dimensions: 768
 ```
 
-### Analysis
+### Running
 
 Run `slopo show-config` to validate your config and show all configurable parameters, most are optional with sensible defaults.
 
-Now you are ready to index code, calculate embeddings and generate a report:
+Now you are ready to index code and calculate embeddings:
 
 ```bash
 slopo index
 slopo embed
-slopo analyze
 ```
 
-## Real workflow
+To generate a report, run `slopo analyze` for the whole indexed codebase or `slopo review` for Git changes.
 
-This section demonstrates how Slopo can be used in a real development workflow.
+## Getting results
 
-It utilizes incremental re-indexing (update index with changed files only) and `slopo.ignore.txt` to discard already reviewed clusters.
+When code changes, run `index` and `embed` to synchronize data before getting a report.
 
-1. Create your first analysis and check results. You will notice `index.md` containing a list of all clusters and cluster details per file.
-2. You may want to exclude some directories or file patterns, usually excluding tests is a good idea. You can also tune thresholds if the result is too big or too small.
-3. Once satisfied with analysis results, ask your AI coding agent to filter out clusters that are not real duplicates. This is a common case because not every similar code is a duplication to act on. Ask the AI agent to add discarded cluster hashes to `slopo.ignore.txt`.
-4. Re-run the analysis to generate a report without reviewed clusters. This is a basis for refactoring, which can be done by an AI agent.
-5. `ignore` file can be committed to your Git repository and reused cross-team. New and modified clusters will reappear in the report. A configuration file without an API key can also be committed. Don't commit `slopo.db`, this is your local data.
+### Analyze the whole project
+
+`slopo analyze` generates a report for code across the whole indexed codebase.
+
+Each cluster has a hash, which can be added to `slopo.ignore.txt` to discard them in analysis. Simply ask your AI coding agent to filter out clusters that are not real duplicates.
+
+### Review recent changes
+
+`slopo review` generates a report for code involving Git changes.
+
+- The default `HEAD` base can be configured with the `--base` option, for example `slopo review --base HEAD~1`
+- Untracked files are included as long as they are indexed.
+- It targets similar code across changed files and between changed and unchanged parts of the codebase.
+- This feature requires `git` installed and `source_dir` must be a Git repository.
+- The result can be evaluated by AI coding agent like in `analyze`.
 
 ## Configuration
 
@@ -144,6 +154,22 @@ embedding_params:
 - `rerank_threshold`: Controls minimal similarity after applying a boost reflecting distance in the codebase.
 - `body_node_count_threshold`: Number of AST nodes inside the body (excluding signature and annotations). This value reflects the minimum code complexity of the included code unit, more precise than text length. Increase if you notice unwanted, too-small code units in the report.
 
+## Portability
+
+Hashes in a report generated by `analyze` are intended to be stable across platforms and the `slopo.ignore.txt` to be committed to Git and used by the whole team. Note that the hash changes when any code unit in the cluster changes or it's moved.
+
+`slopo.conf.yaml` with `source_dir` relative to the project root can be committed and used across the team.
+
+The order of code units in clusters can differ across platforms, but results should be the same, and the report is not intended to be committed. Embedding models don't return exactly the same floats every time, and this may cause edge cases when results differ a bit.
+
+The tool's database `slopo.db` is local to each developer and not intended to be portable.
+
+## Is it the right tool?
+
+Slopo aims to solve one narrow problem. It focuses on detecting duplicated code that other tools miss: the similar logic implemented in different ways. This has its own trade-offs: the need to use embedding models and producing many false positives that need to be filtered out.
+
+It naturally detects also exact copies and slightly changed clones, which can be detected by other tools. If this is only what you need, those tools are a better fit. They are deterministic, faster, more mature, and don't require the whole ceremony involving embedding models.
+
 ## Details
 
 ### Ranking thresholds
@@ -160,3 +186,9 @@ The main goal of this tool is to detect non-exact code duplication, but exact co
 
 - The report shows the code once, listing every path where it appears, instead of repeating identical snippets.
 - The `analyze` command reports the "similarity ratio" (the share of code units flagged as similar) in two variants: including and excluding exact copies.
+
+## Contribution
+
+Pull requests are not accepted and disabled for this repository.
+
+Other contribution types are welcome, especially feedback and human-to-human discussion about ideas, use cases, workflows, friction points.

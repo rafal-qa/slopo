@@ -66,6 +66,8 @@ def sync_index(
             removed_ids.append(indexed_file.id)
     delete_files(conn, removed_ids)
 
+    # Remove embeddings after the same code unit has been re-added,
+    # so only real modifications need to be embedded.
     prune_orphan_embeddings(conn)
 
     return SyncStats(

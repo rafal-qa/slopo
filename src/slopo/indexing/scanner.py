@@ -27,7 +27,8 @@ def scan_directory(root: Path, exclude: list[str]) -> Iterator[str]:
 def parse_file(path: Path) -> list[CodeUnit]:
     parser = get_parser(path)
     try:
-        return parser(path.read_bytes())
+        source = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return parser(source)
     except Exception as e:
         logger.warning("Skipping %s: %s", path, e)
         return []

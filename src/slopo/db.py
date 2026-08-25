@@ -53,16 +53,9 @@ def create_db(cfg: Config) -> sqlite3.Connection:
     return conn
 
 
-def verify_source_dir(conn: sqlite3.Connection, source_dir: Path) -> None:
-    resolved = str(source_dir.resolve())
-    stored = conn.execute("SELECT source_dir FROM metadata WHERE id = 1").fetchone()
-    if stored[0] != resolved:
-        raise ConfigurationMismatchError("source_dir", stored[0], resolved)
-
-
-def chunked(ids: Sequence[int]) -> Iterator[list[int]]:
-    for start in range(0, len(ids), _MAX_SQL_VARIABLES):
-        yield list(ids[start : start + _MAX_SQL_VARIABLES])
+def chunked[T](values: Sequence[T]) -> Iterator[list[T]]:
+    for start in range(0, len(values), _MAX_SQL_VARIABLES):
+        yield list(values[start : start + _MAX_SQL_VARIABLES])
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -81,24 +74,27 @@ def _check_schema_version(conn: sqlite3.Connection) -> None:
 
 def _check_metadata(conn: sqlite3.Connection, cfg: Config) -> None:
     stored = conn.execute(
-        "SELECT embedding_model, embedding_dimensions, body_node_count_threshold"
+        "SELECT source_dir, embedding_model, embedding_dimensions, body_node_count_threshold"
         " FROM metadata WHERE id = 1"
     ).fetchone()
 
     if stored is None:
         raise sqlite3.OperationalError
 
-    if stored[0] != cfg.embedding_model:
+    resolved_source_dir = str(cfg.source_dir.resolve())
+    if stored[0] != resolved_source_dir:
+        raise ConfigurationMismatchError("source_dir", stored[0], resolved_source_dir)
+    if stored[1] != cfg.embedding_model:
         raise ConfigurationMismatchError(
-            "embedding_model", stored[0], cfg.embedding_model
+            "embedding_model", stored[1], cfg.embedding_model
         )
-    if stored[1] != cfg.embedding_dimensions:
+    if stored[2] != cfg.embedding_dimensions:
         raise ConfigurationMismatchError(
-            "embedding_dimensions", str(stored[1]), str(cfg.embedding_dimensions)
+            "embedding_dimensions", str(stored[2]), str(cfg.embedding_dimensions)
         )
-    if stored[2] != cfg.body_node_count_threshold:
+    if stored[3] != cfg.body_node_count_threshold:
         raise ConfigurationMismatchError(
             "body_node_count_threshold",
-            str(stored[2]),
+            str(stored[3]),
             str(cfg.body_node_count_threshold),
         )

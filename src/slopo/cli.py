@@ -20,18 +20,20 @@ from slopo.db import (
     SchemaVersionMismatchError,
     create_db,
     open_db,
-    verify_source_dir,
 )
 from slopo.indexing.command import run_index
 from slopo.embedding.command import run_embed
 from slopo.embedding.embeddings import EmbeddingError
+from slopo.result.review.index_check import StaleIndexError
 from slopo.embedding.db import count_unembedded_units
-from slopo.analysis.command import run_analyze
+from slopo.result.analysis.command import run_analyze
+from slopo.result.review.command import run_review
+from slopo.result.review.git.commands import GitError, git_version
 
 load_dotenv()
 
 app = typer.Typer(
-    help="Embedding-based code duplication detector",
+    help="Find similar code using embeddings.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -44,6 +46,10 @@ def _version_callback(value: bool) -> None:
         typer.echo(f"Slopo {version('slopo')}")
         typer.echo(f"Python {platform.python_version()}")
         typer.echo(f"SQLite {sqlite3.sqlite_version}")
+        try:
+            typer.echo(f"Git: {git_version()}")
+        except GitError:
+            typer.echo("Git: not detected")
         raise typer.Exit()
 
 
@@ -51,7 +57,7 @@ def _version_callback(value: bool) -> None:
 def _main(
     ctx: typer.Context,
     config_path: Path = typer.Option(
-        _DEFAULT_CONFIG, "--config", help="Path to the configuration file"
+        _DEFAULT_CONFIG, "--config", help="Configuration file to use."
     ),
     _version: bool = typer.Option(
         False,
@@ -80,7 +86,7 @@ def init(ctx: typer.Context) -> None:
 
 @app.command(name="show-config")
 def show_config(ctx: typer.Context) -> None:
-    """Validate configuration and show all values."""
+    """Validate and display configuration values."""
     cfg = _load_config_or_exit(ctx)
     for f in fields(cfg):
         value = getattr(cfg, f.name)
@@ -101,7 +107,7 @@ def show_config(ctx: typer.Context) -> None:
 
 @app.command()
 def index(ctx: typer.Context) -> None:
-    """Scan a directory and store parsed code units."""
+    """Update the code index."""
     cfg = _load_config_or_exit(ctx)
 
     if not cfg.source_dir.is_dir():
@@ -110,11 +116,6 @@ def index(ctx: typer.Context) -> None:
 
     if cfg.db_file.exists():
         conn = _open_existing_db_or_exit(cfg)
-        try:
-            verify_source_dir(conn, cfg.source_dir)
-        except ConfigurationMismatchError as e:
-            typer.echo(_configuration_mismatch_message(e), err=True)
-            raise typer.Exit(1)
     else:
         conn = create_db(cfg)
 
@@ -123,7 +124,7 @@ def index(ctx: typer.Context) -> None:
 
 @app.command()
 def embed(ctx: typer.Context) -> None:
-    """Compute embeddings for indexed code units."""
+    """Generate embeddings for indexed code."""
     cfg = _load_config_or_exit(ctx)
     conn = _open_existing_db_or_exit(cfg)
     try:
@@ -135,18 +136,37 @@ def embed(ctx: typer.Context) -> None:
 
 @app.command()
 def analyze(ctx: typer.Context) -> None:
-    """Produce a Markdown report of similar code clusters."""
+    """Find similar code across the codebase."""
     cfg = _load_config_or_exit(ctx)
     conn = _open_existing_db_or_exit(cfg)
+    _require_all_embedded(conn)
 
-    if count_unembedded_units(conn) > 0:
+    run_analyze(conn, cfg, typer.echo)
+
+
+@app.command()
+def review(
+    ctx: typer.Context,
+    base: str = typer.Option(
+        "HEAD", "--base", help="Git ref to compare the working tree against."
+    ),
+) -> None:
+    """Find similar code involving Git changes."""
+    cfg = _load_config_or_exit(ctx)
+    conn = _open_existing_db_or_exit(cfg)
+    _require_all_embedded(conn)
+
+    try:
+        run_review(conn, cfg, base, typer.echo)
+    except StaleIndexError:
         typer.echo(
-            "Error: Some code units have no embeddings. Run `embed` first.",
+            "Error: Index is out of date. Run `index` and `embed` first.",
             err=True,
         )
         raise typer.Exit(1)
-
-    run_analyze(conn, cfg, typer.echo)
+    except GitError as e:
+        typer.echo(f"Error: Git failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
 def main() -> None:
@@ -165,25 +185,36 @@ def _load_config_or_exit(ctx: typer.Context) -> Config:
         raise typer.Exit(1)
 
 
+def _require_all_embedded(conn: sqlite3.Connection) -> None:
+    if count_unembedded_units(conn) > 0:
+        typer.echo(
+            "Error: Some code units have no embeddings. Run `embed` first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+
 def _open_existing_db_or_exit(cfg: Config) -> sqlite3.Connection:
     try:
         return open_db(cfg)
     except DatabaseNotFoundError:
         typer.echo(
-            f"Error: no indexed data found at {cfg.db_file}. Run `slopo index` first.",
+            f"Error: No data found at {cfg.db_file}. Run `index` first.",
             err=True,
         )
         raise typer.Exit(1)
     except ConfigurationMismatchError as e:
-        typer.echo(_configuration_mismatch_message(e), err=True)
+        typer.echo(_configuration_mismatch_message(e, cfg.db_file), err=True)
         raise typer.Exit(1)
     except SchemaVersionMismatchError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
 
-def _configuration_mismatch_message(e: ConfigurationMismatchError) -> str:
+def _configuration_mismatch_message(
+    e: ConfigurationMismatchError, db_file: Path
+) -> str:
     return (
-        f"Error: configuration mismatch: {e.field} was set to {e.stored!r} when the"
-        f" database was created and cannot be changed (current config: {e.current!r})"
+        f"Error: configuration mismatch: {e.field} was set to '{e.stored}' when the"
+        f" database {db_file} was created and cannot be changed (current config: '{e.current}')"
     )
