@@ -1,16 +1,22 @@
 import hashlib
 
-from slopo.result.models import Cluster, UnitRecord
+from slopo.result.models import Cluster, HashedCluster, UnitRecord
 
 _HASH_LENGTH = 12
 
 
-def canonical_cluster_order(
+def to_hashed_cluster(
     clusters: list[Cluster], units: dict[int, UnitRecord]
-) -> list[Cluster]:
+) -> list[HashedCluster]:
+    return [
+        HashedCluster(cluster, cluster_hash(cluster, units)) for cluster in clusters
+    ]
+
+
+def canonical_cluster_order(clusters: list[HashedCluster]) -> list[HashedCluster]:
     return sorted(
         clusters,
-        key=lambda c: (round(c.max_similarity, 2), cluster_hash(c, units)),
+        key=lambda hc: (round(hc.cluster.max_similarity, 2), hc.hash),
         reverse=True,
     )
 

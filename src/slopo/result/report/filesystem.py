@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from slopo.result.identity import canonical_cluster_order
-from slopo.result.models import Cluster, UnitRecord
+from slopo.result.models import HashedCluster, ReviewResult, UnitRecord
 from slopo.result.report.markdown.analyze import (
     build_cluster_analyze,
     build_index_analyze,
@@ -19,14 +19,14 @@ from slopo.result.report.naming import (
 
 
 def write_analyze_report(
-    clusters: list[Cluster],
+    clusters: list[HashedCluster],
     units: dict[int, UnitRecord],
     output_dir: Path,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     _clean_report_dir(output_dir)
 
-    clusters = canonical_cluster_order(clusters, units)
+    clusters = canonical_cluster_order(clusters)
     total = len(clusters)
     # newline="\n" prevents Windows text-mode from translating \n to \r\n. Code
     # unit bodies may already contain \r\n from CRLF source files; translation
@@ -36,32 +36,31 @@ def write_analyze_report(
         encoding="utf-8",
         newline="\n",
     )
-    for i, cluster in enumerate(clusters, 1):
+    for i, hc in enumerate(clusters, 1):
         filename = cluster_filename(i, total)
         (output_dir / filename).write_text(
-            build_cluster_analyze(i, cluster, units),
+            build_cluster_analyze(i, hc, units),
             encoding="utf-8",
             newline="\n",
         )
 
 
 def write_review_report(
-    clusters: list[Cluster],
-    units: dict[int, UnitRecord],
+    result: ReviewResult,
     output_dir: Path,
-    changed_ids: set[int],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     _clean_report_dir(output_dir)
 
-    clusters = canonical_cluster_order(clusters, units)
-    total = len(clusters)
+    clusters, units, changed_ids = result
+    ordered = [hc.cluster for hc in canonical_cluster_order(clusters)]
+    total = len(ordered)
     (output_dir / "index.md").write_text(
-        build_index_review(clusters, units, datetime.now()),
+        build_index_review(ordered, units, datetime.now()),
         encoding="utf-8",
         newline="\n",
     )
-    for i, cluster in enumerate(clusters, 1):
+    for i, cluster in enumerate(ordered, 1):
         filename = cluster_filename(i, total)
         (output_dir / filename).write_text(
             build_cluster_review(i, cluster, units, changed_ids),

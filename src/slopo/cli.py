@@ -4,31 +4,43 @@ from pathlib import Path
 from importlib.metadata import version
 
 import sqlite3
+from typing import NoReturn
+
 import typer
 from dotenv import load_dotenv
 
+from slopo.agent.config import (
+    AGENT_CONFIGS_DIR,
+    check_version as check_agent_config_version,
+    export_configs,
+)
+from slopo.agent.log import AgentLog, open_agent_log, LogOpenError
 from slopo.config import (
-    Config,
     ConfigError,
+    ConfigFileNotFoundError,
     load_config,
     mask_api_key,
     write_config_template,
 )
-from slopo.db import (
-    ConfigurationMismatchError,
-    DatabaseNotFoundError,
-    SchemaVersionMismatchError,
-    create_db,
-    open_db,
-)
+from slopo.db import create_db, open_db
 from slopo.indexing.command import run_index
 from slopo.embedding.command import run_embed
-from slopo.embedding.embeddings import EmbeddingError
-from slopo.result.review.index_check import StaleIndexError
 from slopo.embedding.db import count_unembedded_units
 from slopo.result.analysis.command import run_analyze
+from slopo.result.analysis.selection import select_cluster
+from slopo.result.analysis.text import format_analyze
+from slopo.result.report.filesystem import write_analyze_report, write_review_report
 from slopo.result.review.command import run_review
 from slopo.result.review.git.commands import GitError, git_version
+from slopo.result.review.text import format_review
+from slopo.errors import (
+    KNOWN_ERRORS,
+    InternalError,
+    SourceDirMissingError,
+    TooManyUnembeddedForAgentError,
+    UnembeddedUnitsError,
+    describe,
+)
 
 load_dotenv()
 
@@ -74,11 +86,12 @@ def _main(
 def init(ctx: typer.Context) -> None:
     """Create a configuration file template."""
     path = _config_path(ctx)
+
     try:
         write_config_template(path)
-    except ConfigError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    except KNOWN_ERRORS as e:
+        _exit(e)
+
     typer.echo(
         f"Created config template at {path}. Edit it before running other commands."
     )
@@ -87,7 +100,11 @@ def init(ctx: typer.Context) -> None:
 @app.command(name="show-config")
 def show_config(ctx: typer.Context) -> None:
     """Validate and display configuration values."""
-    cfg = _load_config_or_exit(ctx)
+    try:
+        cfg = load_config(_config_path(ctx))
+    except KNOWN_ERRORS as e:
+        _exit(e)
+
     for f in fields(cfg):
         value = getattr(cfg, f.name)
         if f.name == "embedding_params":
@@ -108,40 +125,49 @@ def show_config(ctx: typer.Context) -> None:
 @app.command()
 def index(ctx: typer.Context) -> None:
     """Update the code index."""
-    cfg = _load_config_or_exit(ctx)
+    try:
+        cfg = load_config(_config_path(ctx))
 
-    if not cfg.source_dir.is_dir():
-        typer.echo(f"Error: {cfg.source_dir} is not a directory", err=True)
-        raise typer.Exit(1)
+        if not cfg.source_dir.is_dir():
+            raise SourceDirMissingError(cfg.source_dir)
 
-    if cfg.db_file.exists():
-        conn = _open_existing_db_or_exit(cfg)
-    else:
-        conn = create_db(cfg)
+        if cfg.db_file.exists():
+            conn = open_db(cfg)
+        else:
+            conn = create_db(cfg)
 
-    run_index(conn, cfg, typer.echo)
+        run_index(conn, cfg, typer.echo)
+    except KNOWN_ERRORS as e:
+        _exit(e)
 
 
 @app.command()
 def embed(ctx: typer.Context) -> None:
     """Generate embeddings for indexed code."""
-    cfg = _load_config_or_exit(ctx)
-    conn = _open_existing_db_or_exit(cfg)
     try:
+        cfg = load_config(_config_path(ctx))
+        conn = open_db(cfg)
         run_embed(conn, cfg, typer.echo)
-    except EmbeddingError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    except KNOWN_ERRORS as e:
+        _exit(e)
 
 
 @app.command()
 def analyze(ctx: typer.Context) -> None:
     """Find similar code across the codebase."""
-    cfg = _load_config_or_exit(ctx)
-    conn = _open_existing_db_or_exit(cfg)
-    _require_all_embedded(conn)
+    try:
+        cfg = load_config(_config_path(ctx))
+        conn = open_db(cfg)
 
-    run_analyze(conn, cfg, typer.echo)
+        if count_unembedded_units(conn) > 0:
+            raise UnembeddedUnitsError
+
+        result = run_analyze(conn, cfg, typer.echo)
+        if result is not None:
+            write_analyze_report(result.clusters, result.units, cfg.report_dir)
+            typer.echo(f"Report written to {cfg.report_dir} directory.")
+    except KNOWN_ERRORS as e:
+        _exit(e)
 
 
 @app.command()
@@ -152,21 +178,144 @@ def review(
     ),
 ) -> None:
     """Find similar code involving Git changes."""
-    cfg = _load_config_or_exit(ctx)
-    conn = _open_existing_db_or_exit(cfg)
-    _require_all_embedded(conn)
+    if base == "":
+        base = "HEAD"
+    try:
+        cfg = load_config(_config_path(ctx))
+        conn = open_db(cfg)
+
+        if count_unembedded_units(conn) > 0:
+            raise UnembeddedUnitsError
+
+        result = run_review(conn, cfg, base, typer.echo)
+        if result is not None:
+            write_review_report(result, cfg.report_dir)
+            typer.echo(f"Report written to {cfg.report_dir} directory.")
+    except KNOWN_ERRORS as e:
+        _exit(e)
+
+
+@app.command(name="agent-configs")
+def agent_configs() -> None:
+    """Export coding agents skill configurations."""
+    try:
+        export_configs(AGENT_CONFIGS_DIR)
+    except KNOWN_ERRORS as e:
+        _exit(e)
+
+    typer.echo(
+        f"Exported agent configurations to {AGENT_CONFIGS_DIR}."
+        " Move what you need into your coding agent's skill location, then remove the directory."
+    )
+
+
+@app.command(name="agent-review")
+def agent_review(
+    ctx: typer.Context,
+    base: str = typer.Option(
+        "HEAD", "--base", help="Git ref to compare the working tree against."
+    ),
+    config_version: int | None = typer.Option(
+        None, "--config-version", help="Agent config version."
+    ),
+) -> None:
+    """Run index, embed, and review as a single operation for coding agents."""
+    if base == "":
+        base = "HEAD"
+    try:
+        cfg = load_config(_config_path(ctx))
+        log_cm = open_agent_log(
+            cfg.agent_log_file,
+            f"agent-review base={base} config-version={config_version}",
+        )
+    except (ConfigError, ConfigFileNotFoundError, LogOpenError) as e:
+        _exit_agent(e)
+    else:
+        with log_cm as log:
+            try:
+                check_agent_config_version(config_version)
+
+                conn = open_db(cfg)
+
+                if count_unembedded_units(conn) > 1000:
+                    raise TooManyUnembeddedForAgentError
+
+                log.write("> index")
+                run_index(conn, cfg, log.write)
+
+                log.write("> embed")
+                run_embed(conn, cfg, log.write)
+
+                log.write("> review")
+                result = run_review(conn, cfg, base, log.write)
+                if result is None:
+                    typer.echo("No duplicates found")
+                else:
+                    typer.echo(format_review(result, cfg.source_dir))
+            except KNOWN_ERRORS as e:
+                _exit_agent_with_log(e, log)
+            except Exception as e:
+                _exit_agent_with_log(InternalError(e), log)
+
+
+@app.command(name="agent-analyze")
+def agent_analyze(
+    ctx: typer.Context,
+    single: bool = typer.Option(
+        False, "--single", help="Report only a single cluster."
+    ),
+    cluster: str | None = typer.Option(
+        None, "--cluster", help="Hash of the cluster to report."
+    ),
+    config_version: int | None = typer.Option(
+        None, "--config-version", help="Agent config version."
+    ),
+) -> None:
+    """Run index, embed, and analyze as a single operation for coding agents."""
+    cluster = cluster or None
+    if cluster is not None and not single:
+        raise typer.BadParameter("--cluster requires --single.")
 
     try:
-        run_review(conn, cfg, base, typer.echo)
-    except StaleIndexError:
-        typer.echo(
-            "Error: Index is out of date. Run `index` and `embed` first.",
-            err=True,
+        cfg = load_config(_config_path(ctx))
+        h_cluster = f" cluster={cluster}" if single else ""
+        log_cm = open_agent_log(
+            cfg.agent_log_file,
+            f"agent-analyze single={single}{h_cluster} config-version={config_version}",
         )
-        raise typer.Exit(1)
-    except GitError as e:
-        typer.echo(f"Error: Git failed: {e}", err=True)
-        raise typer.Exit(1)
+    except (ConfigError, ConfigFileNotFoundError, LogOpenError) as e:
+        _exit_agent(e)
+    else:
+        with log_cm as log:
+            try:
+                check_agent_config_version(config_version)
+
+                conn = open_db(cfg)
+
+                if count_unembedded_units(conn) > 1000:
+                    raise TooManyUnembeddedForAgentError
+
+                log.write("> index")
+                run_index(conn, cfg, log.write)
+
+                log.write("> embed")
+                run_embed(conn, cfg, log.write)
+
+                log.write("> analyze")
+                result = run_analyze(conn, cfg, log.write)
+
+                if single:
+                    result = select_cluster(result, cluster)
+
+                if result is None:
+                    typer.echo("No duplicates found")
+                else:
+                    typer.echo(f"Ignore file: {cfg.ignore_file.resolve()}\n")
+                    typer.echo(format_analyze(result, cfg.source_dir))
+            except KNOWN_ERRORS as e:
+                _exit_agent_with_log(e, log)
+            except Exception as e:
+                _exit_agent_with_log(InternalError(e), log)
 
 
 def main() -> None:
@@ -177,44 +326,20 @@ def _config_path(ctx: typer.Context) -> Path:
     return ctx.obj["config_path"]
 
 
-def _load_config_or_exit(ctx: typer.Context) -> Config:
-    try:
-        return load_config(_config_path(ctx))
-    except ConfigError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+def _exit(exc: Exception) -> NoReturn:
+    msg = describe(exc)
+    typer.echo(f"Error: {msg.human}", err=True)
+    raise typer.Exit(1)
 
 
-def _require_all_embedded(conn: sqlite3.Connection) -> None:
-    if count_unembedded_units(conn) > 0:
-        typer.echo(
-            "Error: Some code units have no embeddings. Run `embed` first.",
-            err=True,
-        )
-        raise typer.Exit(1)
+def _exit_agent(exc: Exception) -> NoReturn:
+    msg = describe(exc)
+    typer.echo(f"Error: {msg.agent}", err=True)
+    raise typer.Exit(1)
 
 
-def _open_existing_db_or_exit(cfg: Config) -> sqlite3.Connection:
-    try:
-        return open_db(cfg)
-    except DatabaseNotFoundError:
-        typer.echo(
-            f"Error: No data found at {cfg.db_file}. Run `index` first.",
-            err=True,
-        )
-        raise typer.Exit(1)
-    except ConfigurationMismatchError as e:
-        typer.echo(_configuration_mismatch_message(e, cfg.db_file), err=True)
-        raise typer.Exit(1)
-    except SchemaVersionMismatchError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
-
-def _configuration_mismatch_message(
-    e: ConfigurationMismatchError, db_file: Path
-) -> str:
-    return (
-        f"Error: configuration mismatch: {e.field} was set to '{e.stored}' when the"
-        f" database {db_file} was created and cannot be changed (current config: '{e.current}')"
-    )
+def _exit_agent_with_log(exc: Exception, log: AgentLog) -> NoReturn:
+    msg = describe(exc)
+    log.write(f"Error: {msg.human}")
+    typer.echo(f"Error: {msg.agent}", err=True)
+    raise typer.Exit(1)

@@ -9,13 +9,12 @@ from slopo.result.clustering import (
 )
 from slopo.result.analysis.db import count_exact_copies, load_duplicate_hashes
 from slopo.result.analysis.ignore import ensure_ignore_file, load_ignored
-from slopo.result.identity import cluster_hash
+from slopo.result.identity import to_hashed_cluster
 from slopo.result.rerank import rerank_all_clusters
 from slopo.result.analysis.similarity import find_similar_pairs
 from slopo.result.db import load_units
-from slopo.result.models import Cluster, UnitRecord
+from slopo.result.models import AnalyzeResult, HashedCluster, UnitRecord
 from slopo.result.overlap import exclude_overlapping_pairs
-from slopo.result.report.filesystem import write_analyze_report
 from slopo.config import Config
 from slopo.embedding.db import load_embeddings
 from slopo.progress import ProgressReporter
@@ -29,7 +28,7 @@ def run_analyze(
     conn: sqlite3.Connection,
     cfg: Config,
     log: ProgressReporter,
-) -> None:
+) -> AnalyzeResult | None:
     embeddings = load_embeddings(conn)
 
     log("Calculating similarity...")
@@ -37,7 +36,7 @@ def run_analyze(
 
     if not pairs:
         log("No similar code found.")
-        return
+        return None
 
     referenced_ids = {uid for p in pairs for uid in (p.unit_id_a, p.unit_id_b)}
     units = load_units(conn, referenced_ids)
@@ -45,7 +44,7 @@ def run_analyze(
 
     if not pairs:
         log("No similar code found.")
-        return
+        return None
 
     log("Clustering and ranking...")
     clusters = build_clusters(pairs)
@@ -56,39 +55,40 @@ def run_analyze(
 
     if not clusters:
         log("No similar code found.")
-        return
+        return None
+
+    hashed = to_hashed_cluster(clusters, units)
 
     ensure_ignore_file(cfg.ignore_file)
 
     ignored = load_ignored(cfg.ignore_file)
     if ignored:
-        kept = [c for c in clusters if cluster_hash(c, units) not in ignored]
-        ignored_count = len(clusters) - len(kept)
-        clusters = kept
+        kept = [hc for hc in hashed if hc.hash not in ignored]
+        ignored_count = len(hashed) - len(kept)
+        hashed = kept
         if ignored_count:
             log(f"Ignored {ignored_count} previously reviewed clusters.")
 
-    if not clusters:
+    if not hashed:
         log("All similar code clusters are in the ignore list.")
-        return
+        return None
 
-    write_analyze_report(clusters, units, cfg.report_dir)
-    log(f"Report written to {cfg.report_dir} directory.")
+    _report_ratios(conn, embeddings, hashed, units, log)
 
-    _report_ratios(conn, embeddings, clusters, units, log)
+    return AnalyzeResult(hashed, units)
 
 
 def _report_ratios(
     conn: sqlite3.Connection,
     embeddings: dict[int, np.ndarray],
-    clusters: list[Cluster],
+    clusters: list[HashedCluster],
     units: dict[int, UnitRecord],
     log: ProgressReporter,
 ) -> None:
     duplicate_hashes = load_duplicate_hashes(conn)
     exact_copies = count_exact_copies(conn)
 
-    flagged_with = {uid for c in clusters for uid in c.unit_ids}
+    flagged_with = {uid for hc in clusters for uid in hc.cluster.unit_ids}
     flagged_without = {
         uid for uid in flagged_with if units[uid].body_hash not in duplicate_hashes
     }

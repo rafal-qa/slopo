@@ -7,6 +7,11 @@ class Cluster(NamedTuple):
     max_similarity: float
 
 
+class HashedCluster(NamedTuple):
+    cluster: Cluster
+    hash: str
+
+
 class SimilarPair(NamedTuple):
     similarity: float
     unit_id_a: int
@@ -21,3 +26,14 @@ class UnitRecord(NamedTuple):
     end_line: int
     body: str
     body_hash: str
+
+
+class ReviewResult(NamedTuple):
+    clusters: list[HashedCluster]
+    units: dict[int, UnitRecord]
+    changed_ids: set[int]
+
+
+class AnalyzeResult(NamedTuple):
+    clusters: list[HashedCluster]
+    units: dict[int, UnitRecord]

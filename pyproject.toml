@@ -1,6 +1,6 @@
 [project]
 name = "slopo"
-version = "0.6.0"
+version = "0.7.0"
 description = "Embedding-based code duplication detector"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -8,7 +8,7 @@ authors = [{ name = "Rafal Kochanowski" }]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "litellm~=1.98.0",
+    "litellm~=1.99.0",
     "numpy~=2.5.2",
     "pathspec~=1.1.1",
     "python-dotenv~=1.2.3",
@@ -24,7 +24,7 @@ dependencies = [
     "tree-sitter-python~=0.25.0",
     "tree-sitter-rust~=0.24.2",
     "tree-sitter-typescript~=0.23.2",
-    "typer~=0.27.1",
+    "typer~=0.27.2",
 ]
 
 [project.urls]

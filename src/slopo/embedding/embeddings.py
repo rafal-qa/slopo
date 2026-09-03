@@ -1,3 +1,5 @@
+import os
+
 from slopo.config import Config
 from slopo.embedding.models import UnembeddedUnit, EmbeddedUnit
 
@@ -7,6 +9,7 @@ class EmbeddingError(Exception):
 
 
 def embed_units(batch: list[UnembeddedUnit], config: Config) -> list[EmbeddedUnit]:
+    os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
     import litellm  # type: ignore[import-untyped]
 
     litellm.suppress_debug_info = True

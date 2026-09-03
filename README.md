@@ -4,22 +4,42 @@
 
 Embedding models are typically used for finding text written differently but having similar meaning. Some models are able to do the same with source code. Slopo is a CLI tool that uses this technology for finding hardest-to-detect code duplicates.
 
-To learn what embeddings can detect, where they are weak, and which models work best, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). It was written by the author of this tool, so its conclusions apply directly here. The sample configuration in this documentation is the one that performed best in the benchmark.
-
-Slopo helps with:
-
-- Analysis of the whole codebase to find similar code. For refactoring and maintenance.
-- Review of recent changes to find similar code between modified or new part and the rest of codebase. For reviewing AI-generated code before committing because AI may re-implement the same solution that already exists somewhere.
+To learn what these AI models allow to detect, where they are weak, and which ones work best, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). It was written by the author of this tool, and the sample configuration in this documentation is the one that gives the best results based on this research.
 
 ### Supported languages
 
 Python, TypeScript, JavaScript, Java, Kotlin, C#, Go, Rust, PHP, Elixir
 
+## What problem it solves
+
+It augments AI coding agents' capabilities by allowing them to see duplicated code they are blind to.
+
+Agents see only the part of the codebase they are currently working on, including related code found by references, similar names, etc. Usually, especially in smaller projects or with good architecture, they are able to spot existing implementations related to what they are working on.
+
+Sometimes, especially in larger projects or with bad architecture, they miss a solution that already exists somewhere and implement it again. This is not copy-paste; this is a similar implementation for the same problem, which is hard to detect for humans, AI, and other tools. **Slopo targets this blind spot by being able to see similar code across the whole codebase, no matter how big or poorly maintained it is.**
+
+What it can do:
+
+- Review recent changes to find similar code between the changed code and the rest of the codebase. For reviewing AI-generated code before committing.
+- Analyze the whole codebase to find similar code. For refactoring and maintenance.
+
+## Agents integration - demo
+
+Slopo can be operated by AI coding agents, which are instructed on what exactly to do with results, not just to report them. They help with discarding nonactionable similarity quickly and provide a level of detail adequate to the situation.
+
+The following videos demonstrate a review of uncommitted changes, where a new implementation is similar to an already existing one.
+
+| Claude Code                                                                                                                    | Codex                                                                                                                        |
+|--------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| [![preview](https://raw.githubusercontent.com/rafal-qa/slopo/refs/heads/main/doc/preview/claude.png)](https://slopo.dev/#demo-claude) | [![preview](https://raw.githubusercontent.com/rafal-qa/slopo/refs/heads/main/doc/preview/codex.png)](https://slopo.dev/#demo-codex) |
+
 ## How it works
 
-In addition to detecting non-exact code duplication, it focuses on code sitting far apart in the codebase, often spread across different modules or separated within a large file. Exact copy-paste is easy for other tools to spot, and duplicates that are close together are easy for humans or AI to spot.
+An embedding is a vector that represents the meaning of a piece of text. Texts with similar meaning have embeddings close to each other. When two code snippets have embeddings that are close, the tool treats them as similar, and therefore as potential duplicates, even if they are written in different ways.
 
-The result is clusters of similar code, ranked by similarity and by distance in the codebase. These are meant as input for your AI coding agent, which can check whether a cluster is a real duplicate. Reviewed ones can be marked as ignored or passed on for refactoring.
+In addition to detecting non-exact code duplication, Slopo focuses on code sitting far apart in the codebase, often spread across different modules or separated within a large file. The further apart the code is, the higher its priority.
+
+The result is clusters of similar code, ranked by similarity and by distance in the codebase. These are meant as input for your AI coding agent, which can check whether a cluster is a real duplicate.
 
 [Example report](doc/example-report) generated from Slopo code (`src` directory, git tag `v0.2.0`).
 
@@ -31,6 +51,8 @@ According to the benchmark, two providers are recommended:
 2. [Voyage AI](https://www.voyageai.com/) - only their general-purpose model, their code-focused models are not suitable here
 
 Jina AI offers API keys with free tokens for non-commercial use, without registration. Paid options are available for commercial use. Simply open the main page, and the token will be generated. You should see "_You have 10,000,000 tokens left in the API key below._" However, free tokens are not always granted - this is probably because of abuse prevention mechanisms based on IP address or other measures (it's a guess, not official information).
+
+Jina's API sometimes delays the initial request because servers may be offline and need to start. Subsequent requests are faster.
 
 ### Local model
 
@@ -50,7 +72,7 @@ Once you figure out the model, the rest is quick.
 uv tool install slopo
 ```
 
-Update to the latest version (there are no automatic updates)
+Update to the latest version (there are no automatic updates or notifications)
 
 ```bash
 uv tool upgrade slopo
@@ -63,6 +85,8 @@ This command uses `uv` ([installing uv](https://docs.astral.sh/uv/getting-starte
 Run `slopo init` to create a config file template containing further instructions. Only the directory with code for analysis and embedding model configuration is required.
 
 ### Model configuration
+
+Note: Don't use higher embedding dimensions than suggested. It won't give better results and will only reduce the tool's performance.
 
 #### Jina AI
 
@@ -110,7 +134,7 @@ When code changes, run `index` and `embed` to synchronize data before getting a 
 
 `slopo analyze` generates a report for code across the whole indexed codebase.
 
-Each cluster has a hash, which can be added to `slopo.ignore.txt` to discard them in analysis. Simply ask your AI coding agent to filter out clusters that are not real duplicates.
+Each cluster has a hash, which can be added to `slopo.ignore.txt` to discard them in analysis.
 
 ### Review recent changes
 
@@ -120,7 +144,72 @@ Each cluster has a hash, which can be added to `slopo.ignore.txt` to discard the
 - Untracked files are included as long as they are indexed.
 - It targets similar code across changed files and between changed and unchanged parts of the codebase.
 - This feature requires `git` installed and `source_dir` must be a Git repository.
-- The result can be evaluated by AI coding agent like in `analyze`.
+
+## Integrating with coding agents
+
+Integration is done with skills for Claude Code and Codex - [src/slopo/agent/configs](src/slopo/agent/configs)
+
+### Skill installation
+
+Run `slopo agent-configs` to export configurations to a new directory containing skills for Claude Code and Codex.
+
+Copy them to a `skill` directory in the desired location. They can be copied either to:
+- Project-level configuration in project directory:
+```
+slopo-agent-configs/claude-code-skills -> .claude/skills
+slopo-agent-configs/codex-skills -> .agents/skills
+```
+- Your home directory or other locations: follow the docs of the coding tool you use.
+
+### Slopo initialization
+
+Agents run the Slopo CLI under the hood, so it should be configured, indexed, and embedded. Make sure it works first.
+
+Agents use dedicated commands, and they don't read Markdown reports. Once initialized, you can run it only with agents; no need to `index`/`embed` each time.
+
+### Slopo configuration location
+
+By default, the `slopo` command reads its config from the `slopo.conf.yaml` in the current directory. The typical setup assumes that it exists in the project root directory and also **the coding agent is run from the root directory**. Otherwise, you will get `Error: Configuration file not found.`
+
+If you have custom file locations, you can add the `slopo --config=...` option to a command invoked by the skill.
+
+## Using with coding agents
+
+Skills are configured to run only by the user, and the agent can't call them itself. For example, the `slopo-review` skill is run with `/slopo-review` on Claude Code and with `$slopo-review` on Codex.
+
+Agents see only reports in compact form and errors without details. Everything else is logged to `slopo.agent.log`. This log contains the same messages and detailed errors, which are printed when commands are used manually.
+
+### Review of Git changes
+
+Usage: `slopo-review [base]`
+
+`[base]` is an optional Git base of changes to include in the report. By default `HEAD` (uncommitted changes).
+
+Analyzes if duplication reported by Slopo is actionable or only noise. If it's worth looking at, it gives a short overview of what the duplication is about and the problem it creates. If the developer is interested, the agent performs deeper analysis, providing information allowing them to decide what to do next.
+
+### Filter out non-duplicates across the codebase
+
+Usage: `slopo-analyze-ignore`
+
+Shallow check of all reported similar code across the codebase. It filters out similar code, which is obviously noise rather than real duplication. Ignored code is added to the ignore file. All work is done without the developer's input.
+
+### Review one duplication across the codebase
+
+Usage: `slopo-analyze-one [cluster hash]`
+
+`[cluster hash]` is an optional hash you can find in a Markdown report generated with the `analyze` command. By default, it picks the first unreviewed similar code cluster with the highest score.
+
+It analyzes one cluster and guides the developer to make a decision about what to do next: ignore, note for later, or refactor now.
+
+**Workflow**: First, filter out noise with `slopo-analyze-ignore`, then review the rest with `slopo-analyze-one`.
+
+## Running Slopo - summary
+
+|                        | Manual CLI                                                                 | Coding agent                                                  |
+|------------------------|----------------------------------------------------------------------------|---------------------------------------------------------------|
+| Review Git changes     | `slopo index` + `embed` + `review`                                         | `slopo-review` skill                                          |
+| Analyze whole codebase | `slopo index` + `embed` + `analyze`                                        | `slopo-analyze-ignore` and `slopo-analyze-one` skills         |
+| Output                 | Markdown report with clusters, scores, and code snippets for manual review | Compact report received by agent, results discussed with user |
 
 ## Configuration
 
@@ -139,6 +228,7 @@ Most configuration is done with a configuration file with two exceptions:
 - `db_file`: SQLite database file with tool data.
 - `report_dir`: Output directory for analysis report.
 - `ignore_file`: Text file with ignored clusters.
+- `agent_log_file`: Log file for commands run by coding agents.
 - `embedding_model`: Embedding model name in LiteLLM format.
 - `embedding_dimensions`: Embedding dimensions compatible with the used model. This value is also used to verify received embeddings dimensions.
 - `embedding_api_key`: API key for embedding provider, alternatively configured with an environment variable. Optional, no need to set for local models.
@@ -166,9 +256,16 @@ The tool's database `slopo.db` is local to each developer and not intended to be
 
 ## Is it the right tool?
 
-Slopo aims to solve one narrow problem. It focuses on detecting duplicated code that other tools miss: the similar logic implemented in different ways. This has its own trade-offs: the need to use embedding models and producing many false positives that need to be filtered out.
+This tool is dedicated to developers with at least minimal experience who are able to make technical decisions. This is not a magic vibe code fixer.
+
+Slopo aims to solve one narrow problem. It focuses on detecting duplicated code that other tools miss: similar logic implemented in different ways. This has its own trade-offs:
+
+- Working with embedding models adds complexity to usage.
+- It may report much similar code, which is not a duplicate.
 
 It naturally detects also exact copies and slightly changed clones, which can be detected by other tools. If this is only what you need, those tools are a better fit. They are deterministic, faster, more mature, and don't require the whole ceremony involving embedding models.
+
+Not every project would benefit from Slopo equally. Larger or poorly maintained ones may benefit more, but it doesn't mean that others won't.
 
 ## Details
 

@@ -35,6 +35,11 @@ class ConfigError(Exception):
     pass
 
 
+class ConfigFileNotFoundError(Exception):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+
 @dataclass
 class Config:
     source_dir: Path
@@ -42,6 +47,7 @@ class Config:
     db_file: Path
     report_dir: Path
     ignore_file: Path
+    agent_log_file: Path
     embedding_model: str
     embedding_dimensions: int
     embedding_api_key: str | None
@@ -56,9 +62,7 @@ class Config:
 
 def load_config(path: Path) -> Config:
     if not path.is_file():
-        raise ConfigError(
-            f"no config file found at {path}. Run `slopo init` to create one."
-        )
+        raise ConfigFileNotFoundError(path)
 
     text = path.read_text(encoding="utf-8")
     source = str(path)
@@ -78,6 +82,7 @@ _KNOWN_CONFIG_KEYS = {
     "db_file",
     "report_dir",
     "ignore_file",
+    "agent_log_file",
     "embedding_model",
     "embedding_dimensions",
     "embedding_api_key",
@@ -108,6 +113,9 @@ def parse_config(raw: Any, source: str) -> Config:
         ),
         ignore_file=_optional_path(
             raw, "ignore_file", source, default=Path("slopo.ignore.txt")
+        ),
+        agent_log_file=_optional_path(
+            raw, "agent_log_file", source, default=Path("slopo.agent.log")
         ),
         embedding_model=_require_str(raw, "embedding_model", source),
         embedding_dimensions=_require_positive_int(raw, "embedding_dimensions", source),

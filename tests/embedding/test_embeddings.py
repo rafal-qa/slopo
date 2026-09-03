@@ -14,6 +14,7 @@ _CONFIG = Config(
     db_file=Path("slopo.db"),
     report_dir=Path("slopo-report"),
     ignore_file=Path("slopo.ignore.txt"),
+    agent_log_file=Path("slopo.log"),
     embedding_model="openai/text-embedding-3-small",
     embedding_dimensions=3,
     embedding_api_key="test-key",

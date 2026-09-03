@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from slopo.result.models import Cluster, UnitRecord
+from slopo.result.models import Cluster, HashedCluster, ReviewResult, UnitRecord
 from slopo.result.report.filesystem import write_analyze_report, write_review_report
+
 
 _UNITS = {
     1: UnitRecord(1, "src/A.java", "foo", 10, 20, "int foo() {}", "hashA"),
     2: UnitRecord(2, "src/B.java", "bar", 5, 15, "int bar() {}", "hashB"),
 }
-_CLUSTERS = [Cluster([1, 2], 0.95, 0.97)]
+_CLUSTERS = [HashedCluster(Cluster([1, 2], 0.95, 0.97), "cluster-1-hash")]
 
 
 def test_creates_output_directory_including_missing_parents(tmp_path: Path):
@@ -46,7 +47,7 @@ def test_leaves_files_not_owned_by_the_tool(tmp_path: Path):
 def test_removes_stale_cluster_files_from_a_larger_previous_run(tmp_path: Path):
     output_dir = tmp_path / "report"
 
-    many = [Cluster([1, 2], 0.95, 0.97) for _ in range(12)]
+    many = [HashedCluster(Cluster([1, 2], 0.95, 0.97), "stale-hash") for _ in range(12)]
     write_analyze_report(many, _UNITS, output_dir)
     assert (output_dir / "cluster-01.md").is_file()
     assert (output_dir / "cluster-12.md").is_file()
@@ -61,7 +62,7 @@ def test_removes_stale_cluster_files_from_a_larger_previous_run(tmp_path: Path):
 def test_writes_changed_marker_to_cluster_file(tmp_path: Path):
     output_dir = tmp_path / "report"
 
-    write_review_report(_CLUSTERS, _UNITS, output_dir, changed_ids={1})
+    write_review_report(ReviewResult(_CLUSTERS, _UNITS, {1}), output_dir)
 
     cluster = (output_dir / "cluster-1.md").read_text()
     assert "**CHANGED** `src/A.java`" in cluster

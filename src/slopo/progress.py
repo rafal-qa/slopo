@@ -1,5 +1,3 @@
-from typing import Protocol
+from typing import Callable, TypeAlias
 
-
-class ProgressReporter(Protocol):
-    def __call__(self, message: str) -> None: ...
+ProgressReporter: TypeAlias = Callable[[str], None]

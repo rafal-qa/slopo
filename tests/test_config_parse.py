@@ -31,6 +31,7 @@ def test_returns_config_with_defaults_when_only_required_fields_present():
     assert cfg.db_file == Path("slopo.db")
     assert cfg.report_dir == Path("slopo-report")
     assert cfg.ignore_file == Path("slopo.ignore.txt")
+    assert cfg.agent_log_file == Path("slopo.agent.log")
     assert cfg.embedding_model == "voyage/voyage-code-3"
     assert cfg.embedding_dimensions == 1024
     assert cfg.embedding_api_key == "test-key-12345"
@@ -201,12 +202,14 @@ def test_path_fields_parsed_from_config():
             db_file="custom.db",
             report_dir="reports",
             ignore_file="skip.txt",
+            agent_log_file="custom.log",
         ),
         source="<test>",
     )
     assert cfg.db_file == Path("custom.db")
     assert cfg.report_dir == Path("reports")
     assert cfg.ignore_file == Path("skip.txt")
+    assert cfg.agent_log_file == Path("custom.log")
 
 
 # --- API key ---

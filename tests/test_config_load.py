@@ -1,6 +1,6 @@
 import pytest
 
-from slopo.config import load_config, ConfigError
+from slopo.config import load_config, ConfigError, ConfigFileNotFoundError
 from pathlib import Path
 
 
@@ -24,6 +24,13 @@ def test_load_config_recognizes_embedding_param_types_from_yaml():
     assert params["temperature"] == 0.5
     assert isinstance(params["temperature"], float)
     assert params["truncation"] is False
+
+
+def test_load_config_raises_not_found_for_missing_file(tmp_path):
+    path = tmp_path / "missing.yaml"
+    with pytest.raises(ConfigFileNotFoundError) as exc:
+        load_config(path)
+    assert exc.value.path == path
 
 
 def test_load_config_handles_empty_file(tmp_path):

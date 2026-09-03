@@ -11,24 +11,26 @@ _MAX_SQL_VARIABLES = 900
 
 
 class DatabaseNotFoundError(Exception):
-    pass
+    def __init__(self, db_file: Path) -> None:
+        self.db_file = db_file
 
 
 class ConfigurationMismatchError(Exception):
     def __init__(self, field: str, stored: str, current: str) -> None:
-        super().__init__(f"{field}: stored={stored}, current={current}")
         self.field = field
         self.stored = stored
         self.current = current
 
 
 class SchemaVersionMismatchError(Exception):
-    pass
+    def __init__(self, database_version: int, expected_version: int) -> None:
+        self.database_version = database_version
+        self.expected_version = expected_version
 
 
 def open_db(cfg: Config) -> sqlite3.Connection:
     if not cfg.db_file.exists():
-        raise DatabaseNotFoundError
+        raise DatabaseNotFoundError(cfg.db_file)
     conn = _connect(cfg.db_file)
     _check_schema_version(conn)
     _check_metadata(conn, cfg)
@@ -68,7 +70,7 @@ def _check_schema_version(conn: sqlite3.Connection) -> None:
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row[0] != SCHEMA_VERSION:
         raise SchemaVersionMismatchError(
-            f"schema version mismatch: database is v{row[0]}, this version expects v{SCHEMA_VERSION}."
+            database_version=row[0], expected_version=SCHEMA_VERSION
         )
 
 
