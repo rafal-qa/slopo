@@ -6,11 +6,16 @@ Embedding models are typically used for finding text written differently but hav
 
 To learn what these AI models allow to detect, where they are weak, and which ones work best, see [Embedding models benchmark for code duplication detection](https://rkochanowski.com/article/embedding-benchmark/). It was written by the author of this tool, and the sample configuration in this documentation is the one that gives the best results based on this research.
 
+### What it can do
+
+- Review recent changes to find similar code between the changed code and the rest of the codebase. For reviewing AI-generated code before committing.
+- Analyze the whole codebase to find similar code. For refactoring and maintenance.
+
 ### Supported languages
 
 Python, TypeScript, JavaScript, Java, Kotlin, C#, Go, Rust, PHP, Elixir
 
-## What problem it solves
+## Problems it solves
 
 It augments AI coding agents' capabilities by allowing them to see duplicated code they are blind to.
 
@@ -18,10 +23,20 @@ Agents see only the part of the codebase they are currently working on, includin
 
 Sometimes, especially in larger projects or with bad architecture, they miss a solution that already exists somewhere and implement it again. This is not copy-paste; this is a similar implementation for the same problem, which is hard to detect for humans, AI, and other tools. **Slopo targets this blind spot by being able to see similar code across the whole codebase, no matter how big or poorly maintained it is.**
 
-What it can do:
+### Additional benefits
 
-- Review recent changes to find similar code between the changed code and the rest of the codebase. For reviewing AI-generated code before committing.
-- Analyze the whole codebase to find similar code. For refactoring and maintenance.
+Not all code duplication is the hardest-to-detect one, and coding agents are able to spot much of that. Even then, Slopo may help.
+
+#### AI cost reduction
+
+- API access to embedding models costs practically nothing compared to models used in AI agents.
+- When an agent receives the report with already found duplicates, it doesn't need to spend tokens on finding these itself.
+
+If we move part of the workflow to a cheaper solution, the total cost and token usage should reduce.
+
+#### Precision improvement
+
+Coding agents perform best when they work on one focused, clearly defined task. The report containing a cluster with similar code provided by Slopo with a focused instruction is exactly that case. The agent loads into its context only relevant data, minimizing distractions and the chance of drifting in the wrong direction or missing something important.
 
 ## Agents integration - demo
 
@@ -45,7 +60,7 @@ The result is clusters of similar code, ranked by similarity and by distance in 
 
 ## Accessing embedding model
 
-According to the benchmark, two providers are recommended:
+According to the benchmark, two API providers are recommended:
 
 1. [Jina AI](https://jina.ai/) - code-focused models available via API and for local use
 2. [Voyage AI](https://www.voyageai.com/) - only their general-purpose model, their code-focused models are not suitable here
@@ -126,7 +141,15 @@ slopo embed
 
 To generate a report, run `slopo analyze` for the whole indexed codebase or `slopo review` for Git changes.
 
-## Getting results
+## Running Slopo - summary
+
+|                        | Manual CLI                                                                 | Coding agent                                                  |
+|------------------------|----------------------------------------------------------------------------|---------------------------------------------------------------|
+| Review Git changes     | `slopo index` + `embed` + `review`                                         | `slopo-review` skill                                          |
+| Analyze whole codebase | `slopo index` + `embed` + `analyze`                                        | `slopo-analyze-ignore` and `slopo-analyze-one` skills         |
+| Output                 | Markdown report with clusters, scores, and code snippets for manual review | Compact report received by agent, results discussed with user |
+
+## Manual CLI
 
 When code changes, run `index` and `embed` to synchronize data before getting a report.
 
@@ -202,14 +225,6 @@ Usage: `slopo-analyze-one [cluster hash]`
 It analyzes one cluster and guides the developer to make a decision about what to do next: ignore, note for later, or refactor now.
 
 **Workflow**: First, filter out noise with `slopo-analyze-ignore`, then review the rest with `slopo-analyze-one`.
-
-## Running Slopo - summary
-
-|                        | Manual CLI                                                                 | Coding agent                                                  |
-|------------------------|----------------------------------------------------------------------------|---------------------------------------------------------------|
-| Review Git changes     | `slopo index` + `embed` + `review`                                         | `slopo-review` skill                                          |
-| Analyze whole codebase | `slopo index` + `embed` + `analyze`                                        | `slopo-analyze-ignore` and `slopo-analyze-one` skills         |
-| Output                 | Markdown report with clusters, scores, and code snippets for manual review | Compact report received by agent, results discussed with user |
 
 ## Configuration
 
