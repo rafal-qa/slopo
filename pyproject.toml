@@ -1,17 +1,17 @@
 [project]
 name = "slopo"
-version = "0.9.0"
+version = "0.9.1"
 description = "Embedding-based code duplication detector"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Rafal Kochanowski" }]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.15"
 dependencies = [
-    "litellm~=1.102.1",
-    "numpy~=2.5.3",
+    "litellm~=1.106.6",
+    "numpy~=2.5.4",
     "pathspec~=1.1.1",
-    "python-dotenv~=1.2.3",
+    "python-dotenv~=1.2.4",
     "pyyaml~=6.0.3",
     "tree-sitter~=0.26.0",
     "tree-sitter-c~=0.24.2",
@@ -22,13 +22,13 @@ dependencies = [
     "tree-sitter-java~=0.23.5",
     "tree-sitter-javascript~=0.25.0",
     "tree-sitter-kotlin~=1.1.0",
-    "tree-sitter-php~=0.24.1",
+    "tree-sitter-php~=0.25.1",
     "tree-sitter-python~=0.25.0",
     "tree-sitter-ruby~=0.23.1",
     "tree-sitter-rust~=0.24.2",
-    "tree-sitter-swift~=0.7.3",
+    "tree-sitter-swift~=0.7.4",
     "tree-sitter-typescript~=0.23.2",
-    "typer~=0.27.2",
+    "typer~=0.27.3",
 ]
 
 [project.urls]
@@ -39,7 +39,7 @@ Repository = "https://github.com/rafal-qa/slopo"
 slopo = "slopo.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.15,<0.13.0"]
+requires = ["uv_build>=0.11.15,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
