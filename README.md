@@ -94,7 +94,7 @@ Once you figure out the model, the rest is quick.
 ### Installation
 
 ```bash
-uv tool install slopo
+uv tool install --python 3.14 slopo
 ```
 
 Update to the latest version (there are no automatic updates or notifications)
